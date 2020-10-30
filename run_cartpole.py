@@ -7,7 +7,7 @@ env = gym.make('CartPole-v0')
 env = env.unwrapped
 
 # Policy gradient has high variance, seed for reproducability
-env.seed(1)
+env.seed(42)
 
 print("env.action_space", env.action_space)
 print("env.observation_space", env.observation_space)
@@ -21,7 +21,6 @@ rewards = []
 RENDER_REWARD_MIN = 50
 
 if __name__ == "__main__":
-
 
     # Load checkpoint
     load_path = None #"output/weights/CartPole-v0.ckpt"

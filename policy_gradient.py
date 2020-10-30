@@ -3,6 +3,12 @@ Policy Gradient Reinforcement Learning
 Uses a 3 layer neural network as the policy network
 
 """
+
+"""# below code to import tf>=2.0 as tf<2.0
+import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
+tf.disable_eager_execution()
+"""
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.framework import ops
@@ -18,8 +24,8 @@ class PolicyGradient:
         save_path=None
     ):
 
-        self.n_x = n_x
-        self.n_y = n_y
+        self.n_x = n_x # num states
+        self.n_y = n_y # num actions
         self.lr = learning_rate
         self.gamma = reward_decay
 
@@ -33,7 +39,7 @@ class PolicyGradient:
 
         self.cost_history = []
 
-        self.sess = tf.Session()
+        self.sess = tf.Session() # tf: init training by calling tf.Session()
 
         # $ tensorboard --logdir=logs
         # http://0.0.0.0:6006/
@@ -65,7 +71,7 @@ class PolicyGradient:
         # e.g. for n_y = 2 -> [ array([ 1.,  0.]), array([ 0.,  1.]), array([ 0.,  1.]), array([ 1.,  0.]) ]
         action = np.zeros(self.n_y)
         action[a] = 1
-        self.episode_actions.append(action)
+        self.episode_actions.append(action) # [one_hot(taken_action) \in action_space]
 
 
     def choose_action(self, observation):
@@ -78,12 +84,13 @@ class PolicyGradient:
             Returns: index of action we want to choose
         """
         # Reshape observation to (num_features, 1)
+        # (one-hot embedding of observed state)
         observation = observation[:, np.newaxis]
 
         # Run forward propagation to get softmax probabilities
-        prob_weights = self.sess.run(self.outputs_softmax, feed_dict = {self.X: observation})
+        prob_weights = self.sess.run(self.outputs_softmax, feed_dict={self.X: observation})
 
-        # Select action using a biased sample
+        # Select action using a sample according to policy (on policy)
         # this will return the index of the action we've sampled
         action = np.random.choice(range(len(prob_weights.ravel())), p=prob_weights.ravel())
         return action

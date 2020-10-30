@@ -4,6 +4,12 @@ Uses a 3 layer neural network as the policy network
 Uses tf.layers to build the neural network
 
 """
+
+""" # below code to import tf>=2.0 as tf<2.0
+import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
+tf.disable_eager_execution()
+"""
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.framework import ops
