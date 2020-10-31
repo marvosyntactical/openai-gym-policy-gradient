@@ -3,8 +3,12 @@ from policy_gradient_layers import PolicyGradient
 import matplotlib.pyplot as plt
 import numpy as np
 
-env = gym.make('CartPole-v0')
-env = env.unwrapped
+import os
+
+task = "Ant-v2"
+env = gym.make(task)
+env.unwrapped
+env = env.env
 
 # Policy gradient has high variance, seed for reproducibility
 env.seed(42)
@@ -29,7 +33,7 @@ if __name__ == "__main__":
 
     PG = PolicyGradient(
         n_x = env.observation_space.shape[0],
-        n_y = env.action_space.n,
+        n_y = env.action_space.shape[0],
         learning_rate=0.01,
         reward_decay=0.95,
         load_path=load_path,
@@ -41,7 +45,8 @@ if __name__ == "__main__":
         observation = env.reset()
 
         while True:
-            if RENDER_ENV: env.render()
+            if RENDER_ENV and os.environ.get("DISPLAY"):
+                env.render()
 
             # 1. Choose an action based on observation
             action = PG.choose_action(observation)

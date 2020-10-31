@@ -11,7 +11,9 @@ tf.disable_eager_execution()
 """
 import tensorflow as tf
 import numpy as np
-from tensorflow.python.framework import ops
+# from tensorflow.python.framework import ops
+
+tf_init_seed = 42 # for xavier init
 
 class PolicyGradient:
     def __init__(
@@ -35,12 +37,16 @@ class PolicyGradient:
 
         self.episode_observations, self.episode_actions, self.episode_rewards = [], [], []
 
-        self.build_network()
 
         self.cost_history = []
 
         self.sess = tf.Session() # tf: init training by calling tf.Session()
 
+        # TODO somehow optionally move to GPU
+        print("Is there a GPU available: "),
+        print(tf.config.experimental.list_physical_devices("GPU"))
+
+        self.build_network()
         # $ tensorboard --logdir=logs
         # http://0.0.0.0:6006/
         tf.summary.FileWriter("logs/", self.sess.graph)
@@ -54,6 +60,18 @@ class PolicyGradient:
         if load_path is not None:
             self.load_path = load_path
             self.saver.restore(self.sess, self.load_path)
+
+    def profile_ops(self):
+        
+        self.run_meta = tf.RunMetadata()
+    
+        opts_params = tf.profiler.ProfileOptionBuilder.trainable_variables_parameter()
+        opts_flops = tf.profiler.ProfileOptionBuilder.float_operation()
+        opts_flops['output'] = "none" # suppress outputs to stdout as I print manually; delete this file
+        opts_flops["run_meta_path"] = True  # FIXME make this work
+        flop_info = tf.profiler.profile(self.sess.graph, run_meta=self.run_meta, cmd="op", options=opts_flops)
+        param_info = tf.profiler.profile(self.sess.graph, run_meta=self.run_meta, cmd="op", options=opts_params)
+        return flop_info.total_float_ops.real, param_info.total_parameters.real
 
     def store_transition(self, s, a, r):
         """
@@ -140,12 +158,12 @@ class PolicyGradient:
         units_layer_2 = 10
         units_output_layer = self.n_y
         with tf.name_scope('parameters'):
-            W1 = tf.get_variable("W1", [units_layer_1, self.n_x], initializer = tf.contrib.layers.xavier_initializer(seed=1))
-            b1 = tf.get_variable("b1", [units_layer_1, 1], initializer = tf.contrib.layers.xavier_initializer(seed=1))
-            W2 = tf.get_variable("W2", [units_layer_2, units_layer_1], initializer = tf.contrib.layers.xavier_initializer(seed=1))
-            b2 = tf.get_variable("b2", [units_layer_2, 1], initializer = tf.contrib.layers.xavier_initializer(seed=1))
-            W3 = tf.get_variable("W3", [self.n_y, units_layer_2], initializer = tf.contrib.layers.xavier_initializer(seed=1))
-            b3 = tf.get_variable("b3", [self.n_y, 1], initializer = tf.contrib.layers.xavier_initializer(seed=1))
+            W1 = tf.get_variable("W1", [units_layer_1, self.n_x], initializer = tf.contrib.layers.xavier_initializer(seed=tf_init_seed))
+            b1 = tf.get_variable("b1", [units_layer_1, 1], initializer = tf.contrib.layers.xavier_initializer(seed=tf_init_seed))
+            W2 = tf.get_variable("W2", [units_layer_2, units_layer_1], initializer = tf.contrib.layers.xavier_initializer(seed=tf_init_seed))
+            b2 = tf.get_variable("b2", [units_layer_2, 1], initializer = tf.contrib.layers.xavier_initializer(seed=tf_init_seed))
+            W3 = tf.get_variable("W3", [self.n_y, units_layer_2], initializer = tf.contrib.layers.xavier_initializer(seed=tf_init_seed))
+            b3 = tf.get_variable("b3", [self.n_y, 1], initializer = tf.contrib.layers.xavier_initializer(seed=tf_init_seed))
 
         # Forward prop
         with tf.name_scope('layer_1'):
