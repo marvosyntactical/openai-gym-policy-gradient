@@ -10,9 +10,14 @@ import tensorflow.compat.v1 as tf
 # tf.disable_v2_behavior()
 tf.disable_eager_execution()
 """
-import tensorflow as tf
 import numpy as np
+
+import tensorflow as tf
+k = tf.keras
+_K = k.backend
+PROFILER = tf.profiler.experimental
 # from tensorflow.python.framework import ops
+
 
 class PolicyGradient:
     def __init__(
@@ -27,6 +32,7 @@ class PolicyGradient:
 
         self.n_x = n_x
         self.n_y = n_y
+
         self.lr = learning_rate
         self.gamma = reward_decay
 
@@ -38,19 +44,23 @@ class PolicyGradient:
 
         self.cost_history = []
 
-        self.sess = tf.Session() # tf: init training by calling tf.Session()
-
         # TODO somehow optionally move to GPU
-        gpu  tf.config.experimental.list_physical_devices("GPU")
-        print("Is there a GPU available: "),
+        gpus = tf.config.experimental.list_physical_devices("GPU") 
+        print(f"Is there a GPU available: {gpus if len(gpus) else 'No'}"),
 
-        self.build_network()
+        self.build_network() # sets self.model to keras model
+        assert hasattr(self, "model")
+
         # $ tensorboard --logdir=logs
         # http://0.0.0.0:6006/
-        tf.summary.FileWriter("logs/", self.sess.graph)
+        tf.summary.create_file_writer(
+                "logs/", max_queue=None, flush_millis=None, filename_suffix=None, name="PGkeras"
+        )
 
-        self.sess.run(tf.global_variables_initializer())
+        self.start_profile_ops()
 
+        # XXX port saving logic to tf=2.3
+        """
         # 'Saver' op to save and restore all the variables
         self.saver = tf.train.Saver()
 
@@ -58,21 +68,17 @@ class PolicyGradient:
         if load_path is not None:
             self.load_path = load_path
             self.saver.restore(self.sess, self.load_path)
+        """
 
-
-    def profile_ops(self):
-        
-        self.run_meta = tf.RunMetadata()
-    
-        opts_params = tf.profiler.ProfileOptionBuilder.trainable_variables_parameter()
-        opts_flops = tf.profiler.ProfileOptionBuilder.float_operation()
-        opts_flops['output'] = "none" # suppress outputs to stdout as I print manually; delete this file
-        opts_flops["run_meta_path"] = True  # FIXME make this work
-        flop_info = tf.profiler.profile(self.sess.graph, cmd="op", options=opts_flops)
-        param_info = tf.profiler.profile(self.sess.graph, cmd="op", options=opts_params)
-
-        return flop_info.total_float_ops.real, param_info.total_parameters.real
-
+    def start_profile_ops(self, logdir="flops/"):
+        opts = PROFILER.ProfilerOptions(
+            host_tracer_level=2,
+            python_tracer_level=0, 
+            device_tracer_level=1 
+        )
+        PROFILER.start(
+            logdir, opts
+        )
 
     def store_transition(self, s, a, r):
         """
@@ -101,7 +107,7 @@ class PolicyGradient:
         observation = observation[np.newaxis, :]
 
         # Run forward propagation to get softmax probabilities
-        prob_weights = self.sess.run(self.outputs_softmax, feed_dict = {self.X: observation})
+        prob_weights = self.model.predict(observation)
 
         # Select action using a biased sample
         # this will return the index of the action we've sampled
@@ -110,26 +116,29 @@ class PolicyGradient:
 
     def learn(self):
         # Discount and normalize episode reward
-        discounted_episode_rewards_norm = self.discount_and_norm_rewards()
+        self.discounted_episode_rewards_norm = self.discount_and_norm_rewards()
+
+        obs = np.vstack(self.episode_observations) # shape batch x states 
+        acts = np.array(self.episode_actions) # shape actions x 1
 
         # Train on episode
-        self.sess.run(self.train_op, feed_dict={
-             self.X: np.vstack(self.episode_observations), # shape [ examples, number of inputs]
-             self.Y: np.array(self.episode_actions), # shape [actions, ]
-             self.discounted_episode_rewards_norm: discounted_episode_rewards_norm,
-        })
+        self.model.fit(obs, acts)
 
         # Reset the episode data
         self.episode_observations, self.episode_actions, self.episode_rewards  = [], [], []
 
+        # XXX port saving logic 
+        """
         # Save checkpoint
         if self.save_path is not None:
             save_path = self.saver.save(self.sess, self.save_path)
             print("Model saved in file: %s" % save_path)
+        """
 
-        return discounted_episode_rewards_norm
+        return self.discounted_episode_rewards_norm
 
     def discount_and_norm_rewards(self):
+        # discounted reward calc 
         discounted_episode_rewards = np.zeros_like(self.episode_rewards)
         cumulative = 0
         for t in reversed(range(len(self.episode_rewards))):
@@ -140,50 +149,31 @@ class PolicyGradient:
         discounted_episode_rewards /= np.std(discounted_episode_rewards)
         return discounted_episode_rewards
 
+    def reward_guided_loss(self, y_true, y_pred):
+        """Args: labels, softmax probs"""
 
+        loss = _K.categorical_crossentropy(y_true, y_pred)
+
+        return _K.mean(loss*self.discounted_episode_rewards_norm)
 
     def build_network(self):
-        with tf.name_scope('inputs'):
-            self.X = tf.placeholder(tf.float32, [None, self.n_x], name="X")
-            self.Y = tf.placeholder(tf.int32, [None], name="Y")
-            self.discounted_episode_rewards_norm = tf.placeholder(tf.float32, [None, ], name="actions_value")
-        # fc1
-        A1 = tf.layers.dense(
-            inputs=self.X,
-            units=10,
-            activation=tf.nn.relu,
-            kernel_initializer=tf.random_normal_initializer(mean=0, stddev=0.3),
-            bias_initializer=tf.constant_initializer(0.1),
-            name='fc1'
-        )
-        # fc2
-        A2 = tf.layers.dense(
-            inputs=A1,
-            units=10,
-            activation=tf.nn.relu,
-            kernel_initializer=tf.random_normal_initializer(mean=0, stddev=0.3),
-            bias_initializer=tf.constant_initializer(0.1),
-            name='fc2'
-        )
-        # fc3
-        Z3 = tf.layers.dense(
-            inputs=A2,
-            units=self.n_y,
-            activation=None,
-            kernel_initializer=tf.random_normal_initializer(mean=0, stddev=0.3),
-            bias_initializer=tf.constant_initializer(0.1),
-            name='fc3'
-        )
 
-        # Softmax outputs
-        self.outputs_softmax = tf.nn.softmax(Z3, name='A3')
+        model = k.Sequential()
+        model.add(k.layers.InputLayer(batch_input_shape=(None, self.n_x)))
+        model.add(k.layers.Dense(10, activation="relu"))
+        model.add(k.layers.Dense(10, activation="relu"))
+        model.add(k.layers.Dense(self.n_y, activation="softmax"))
 
-        with tf.name_scope('loss'):
-            neg_log_prob = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=Z3, labels=self.Y)
-            loss = tf.reduce_mean(neg_log_prob * self.discounted_episode_rewards_norm)  # reward guided loss
+        # training logic
 
-        with tf.name_scope('train'):
-            self.train_op = tf.train.AdamOptimizer(self.lr).minimize(loss)
+        adam = tf.optimizers.Adam(self.lr)
+        # adam.minimize(self.reward_guided_loss, model)
+
+        model.compile(loss=self.reward_guided_loss, optimizer=adam, metrics=['mae'])
+
+        self.model = model
+        
+
 
     def plot_cost(self):
         import matplotlib

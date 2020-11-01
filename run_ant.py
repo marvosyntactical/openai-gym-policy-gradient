@@ -1,5 +1,8 @@
 import gym
-from policy_gradient_layers import PolicyGradient
+# from policy_gradient_layers import PolicyGradient
+from pg_keras import PolicyGradient
+
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -7,8 +10,8 @@ import os
 
 task = "Ant-v2"
 env = gym.make(task)
-env.unwrapped
-env = env.env
+env = env.unwrapped
+# env = env.env
 
 # Policy gradient has high variance, seed for reproducibility
 env.seed(42)
@@ -17,7 +20,6 @@ print("env.action_space", env.action_space)
 print("env.observation_space", env.observation_space)
 print("env.observation_space.high", env.observation_space.high)
 print("env.observation_space.low", env.observation_space.low)
-
 
 RENDER_ENV = False
 EPISODES = 500
@@ -69,10 +71,11 @@ if __name__ == "__main__":
                 max_reward_so_far = np.amax(rewards)
                 print("Max reward so far: ", max_reward_so_far)
 
-                flops, params = PG.profile_ops()
+                """
                 print("TF total params (should not change...):  ", params)
                 episode_len = len(episode_rewards)
                 print("TF Flops: ", flops*episode_len)
+                """
 
                 # 4. Make Gradient Step 
                 discounted_episode_rewards_norm = PG.learn()
@@ -84,3 +87,7 @@ if __name__ == "__main__":
 
             # Save new observation
             observation = observation_
+    
+    print("Finished all episodes, bye :*")
+    print("Max reward: ", max_reward_so_far)
+    

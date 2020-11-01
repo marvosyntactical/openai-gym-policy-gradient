@@ -1,5 +1,5 @@
 import gym
-from policy_gradient_layers import PolicyGradient
+from pg_keras import PolicyGradient
 import matplotlib.pyplot as plt
 import numpy as np
 
